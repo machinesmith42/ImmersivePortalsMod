@@ -11,6 +11,7 @@ import com.qouteall.immersive_portals.teleportation.CollisionHelper;
 import com.qouteall.immersive_portals.teleportation.ServerTeleportationManager;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityPose;
+import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
@@ -67,6 +68,9 @@ public abstract class MixinEntity implements IEEntity {
     @Shadow
     public int age;
     
+    @Shadow
+    public abstract Vec3d getVelocity();
+    
     //maintain collidingPortal field
     @Inject(method = "tick", at = @At("HEAD"))
     private void onTicking(CallbackInfo ci) {
@@ -84,9 +88,9 @@ public abstract class MixinEntity implements IEEntity {
     )
     private Vec3d redirectHandleCollisions(Entity entity, Vec3d attemptedMove) {
         if (attemptedMove.lengthSquared() > 60 * 60) {
-           limitedLogger.invoke(() -> {
-               Helper.err("Entity moves too fast " + entity + attemptedMove + entity.world.getTime());
-               new Throwable().printStackTrace();
+            limitedLogger.invoke(() -> {
+                Helper.err("Entity moves too fast " + entity + attemptedMove + entity.world.getTime());
+                new Throwable().printStackTrace();
             });
             
             if (entity instanceof ServerPlayerEntity) {
@@ -97,6 +101,10 @@ public abstract class MixinEntity implements IEEntity {
             else {
                 return attemptedMove;
             }
+        }
+        
+        if (getVelocity().lengthSquared() > 2) {
+            CollisionHelper.updateCollidingPortalNow(entity);
         }
         
         if (collidingPortal == null ||
@@ -178,12 +186,10 @@ public abstract class MixinEntity implements IEEntity {
     private void onSetPose(EntityPose pose, CallbackInfo ci) {
         Entity this_ = (Entity) (Object) this;
         
-        if (this_ instanceof ServerPlayerEntity) {
+        if (this_ instanceof PlayerEntity) {
             if (this_.getPose() == EntityPose.STANDING) {
                 if (pose == EntityPose.CROUCHING || pose == EntityPose.SWIMMING) {
-                    if (isRecentlyCollidingWithPortal() ||
-                        Global.serverTeleportationManager.isJustTeleported(this_, 20)
-                    ) {
+                    if (isRecentlyCollidingWithPortal()) {
                         ci.cancel();
                     }
                 }
@@ -205,7 +211,8 @@ public abstract class MixinEntity implements IEEntity {
                 collidingPortal = null;
             }
             else {
-                if (!getBoundingBox().expand(0.5).intersects(collidingPortal.getBoundingBox())) {
+                Box stretchedBoundingBox = CollisionHelper.getStretchedBoundingBox(this_);
+                if (!stretchedBoundingBox.expand(0.5).intersects(collidingPortal.getBoundingBox())) {
                     collidingPortal = null;
                 }
             }

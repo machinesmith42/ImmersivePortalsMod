@@ -22,6 +22,7 @@ import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.registry.RegistryKey;
 import net.minecraft.world.World;
 
+import javax.annotation.Nullable;
 import java.util.List;
 import java.util.function.Function;
 
@@ -32,6 +33,7 @@ public class CollisionHelper {
     //cut a box with a plane
     //the facing that normal points to will be remained
     //return null for empty box
+    @Nullable
     private static Box clipBox(Box box, Vec3d planePos, Vec3d planeNormal) {
         
         boolean xForward = planeNormal.x > 0;
@@ -85,6 +87,8 @@ public class CollisionHelper {
         Portal collidingPortal,
         Function<Vec3d, Vec3d> handleCollisionFunc
     ) {
+        entity.world.getProfiler().push("cross_portal_collision");
+        
         Box originalBoundingBox = entity.getBoundingBox();
         
         Vec3d thisSideMove = getThisSideMove(
@@ -103,6 +107,8 @@ public class CollisionHelper {
             entity, thisSideMove, collidingPortal,
             handleCollisionFunc, originalBoundingBox
         );
+        
+        entity.world.getProfiler().pop();
         
         return new Vec3d(
             correctXZCoordinate(attemptedMove.x, otherSideMove.x),
@@ -243,10 +249,10 @@ public class CollisionHelper {
     ) {
         //cut the collision box a little bit more for horizontal portals
         //because the box will be stretched by attemptedMove when calculating collision
-        Vec3d cullingPos = portal.getOriginPos().subtract(attemptedMove);
+        Vec3d clippingPos = portal.getOriginPos().subtract(attemptedMove);
         return clipBox(
             originalBox,
-            cullingPos,
+            clippingPos,
             portal.getNormal()
         );
     }
@@ -254,14 +260,34 @@ public class CollisionHelper {
     private static Box getCollisionBoxOtherSide(
         Portal portal,
         Box originalBox,
-        Vec3d attemptedMove
+        Vec3d transformedAttemptedMove
     ) {
         Box otherSideBox = transformBox(portal, originalBox);
-        return clipBox(
+        
+        Vec3d clippingPos = portal.getDestPos().subtract(transformedAttemptedMove);
+        
+        Box box = clipBox(
             otherSideBox,
-            portal.getDestPos().subtract(attemptedMove),
+            clippingPos,
             portal.getContentDirection()
         );
+        
+        if (box != null) {
+            Vec3d contentDirection = portal.getContentDirection();
+            boolean movingIntoPortal =
+                contentDirection.dotProduct(transformedAttemptedMove) > 0;
+            if (movingIntoPortal && transformedAttemptedMove.lengthSquared() > 1) {
+                // the box is not clipped
+                if (box.getCenter().subtract(otherSideBox.getCenter()).lengthSquared() < 0.2) {
+                    // avoid colliding with blocks behind the portal destination
+                    box = box.offset(
+                        contentDirection.multiply(transformedAttemptedMove.dotProduct(contentDirection))
+                    );
+                }
+            }
+        }
+        
+        return box;
     }
     
     private static Box transformBox(Portal portal, Box originalBox) {
@@ -318,7 +344,7 @@ public class CollisionHelper {
                 for (Portal globalPortal : globalPortals) {
                     Box globalPortalBoundingBox = globalPortal.getBoundingBox();
                     if (entityBoundingBoxStretched.intersects(globalPortalBoundingBox)) {
-                        if (canCollideWithPortal(entity, globalPortal, 1)) {
+                        if (canCollideWithPortal(entity, globalPortal, 0)) {
                             ((IEEntity) entity).notifyCollidingWithPortal(globalPortal);
                         }
                     }
@@ -369,7 +395,7 @@ public class CollisionHelper {
                 if (!entityBoxStretched.intersects(portalBoundingBox)) {
                     return;
                 }
-                final boolean canCollideWithPortal = canCollideWithPortal(entity, portal, 1);
+                boolean canCollideWithPortal = canCollideWithPortal(entity, portal, 0);
                 if (!canCollideWithPortal) {
                     return;
                 }
@@ -379,8 +405,39 @@ public class CollisionHelper {
         );
     }
     
-    private static Box getStretchedBoundingBox(Entity entity) {
-        return entity.getBoundingBox().stretch(entity.getVelocity());
+    // the normal way of updating colliding portal delays one tick and does not work in high speed
+    // to save performance, only do this on high speed
+    public static void updateCollidingPortalNow(Entity entity) {
+        if (entity instanceof Portal) {
+            return;
+        }
+        
+        entity.world.getProfiler().push("update_colliding_portal_now");
+        
+        Box boundingBox = getStretchedBoundingBox(entity);
+        McHelper.foreachEntitiesByBoxApproximateRegions(
+            Portal.class,
+            entity.world,
+            boundingBox,
+            10,
+            portal -> {
+                if (boundingBox.intersects(portal.getBoundingBox())) {
+                    if (canCollideWithPortal(entity, portal, 0)) {
+                        ((IEEntity) entity).notifyCollidingWithPortal(portal);
+                    }
+                }
+            }
+        );
+        
+        entity.world.getProfiler().pop();
+    }
+    
+    public static Box getStretchedBoundingBox(Entity entity) {
+        // normal colliding portal update lags 1 tick before collision calculation
+        // the velocity updates later after updating colliding portal
+        // expand the velocity to avoid not collide with portal in time
+        Vec3d expand = entity.getVelocity().multiply(1.2);
+        return entity.getBoundingBox().stretch(expand);
     }
     
     @Environment(EnvType.CLIENT)

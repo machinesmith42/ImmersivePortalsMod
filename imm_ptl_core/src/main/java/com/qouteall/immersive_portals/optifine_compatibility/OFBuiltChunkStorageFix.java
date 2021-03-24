@@ -22,6 +22,8 @@ public class OFBuiltChunkStorageFix {
     
     private static Field BuiltChunkStorage_mapVboRegions;
     
+    private static Method BuiltChunkStorage_deleteVboRegions;
+    
     public static void init() {
         BuiltChunkStorage_updateVboRegion = Helper.noError(() ->
             BuiltChunkStorage.class
@@ -37,6 +39,13 @@ public class OFBuiltChunkStorageFix {
                 .getDeclaredField("mapVboRegions")
         );
         BuiltChunkStorage_mapVboRegions.setAccessible(true);
+        
+        BuiltChunkStorage_deleteVboRegions = Helper.noError(() ->
+            BuiltChunkStorage.class
+                .getDeclaredMethod(
+                    "deleteVboRegions"
+                )
+        );
     }
     
     public static void onBuiltChunkCreated(
@@ -115,7 +124,7 @@ public class OFBuiltChunkStorageFix {
                 for (ChunkBuilder.BuiltChunk renderChunk : chunks) {
                     BlockPos neighborPos = renderChunk.getNeighborPosition(facing);
                     ChunkBuilder.BuiltChunk neighbour =
-                        storage.myGetRenderChunkRaw(neighborPos, chunks);
+                        storage.getSectionFromRawArray(neighborPos, chunks);
                     
                     ((IEOFBuiltChunk) renderChunk).ip_setRenderChunkNeighbour(
                         facing, neighbour
@@ -128,5 +137,16 @@ public class OFBuiltChunkStorageFix {
         }
         
         MinecraftClient.getInstance().getProfiler().pop();
+    }
+    
+    public static void onBuiltChunkStorageCleanup(BuiltChunkStorage builtChunkStorage) {
+        if (!OFInterface.isOptifinePresent) {
+            return;
+        }
+        
+        Helper.noError(() -> {
+            BuiltChunkStorage_deleteVboRegions.invoke(builtChunkStorage);
+            return null;
+        });
     }
 }

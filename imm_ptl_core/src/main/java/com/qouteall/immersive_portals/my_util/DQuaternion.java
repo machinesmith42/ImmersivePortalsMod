@@ -37,7 +37,15 @@ public class DQuaternion {
      * @return the axis that the rotation is being performed along
      */
     public Vec3d getRotatingAxis() {
-        return new Vec3d(x, y, z);
+        return new Vec3d(x, y, z).normalize();
+    }
+    
+    public double getRotatingAngleRadians() {
+        return Math.acos(w) * 2;
+    }
+    
+    public double getRotatingAngleDegrees() {
+        return Math.toDegrees(getRotatingAngleRadians());
     }
     
     /**
@@ -51,8 +59,9 @@ public class DQuaternion {
     
     /**
      * Create a new quaternion.
-     * @param rotatingAxis the axis that it rotates along
-     * @param degrees the rotating angle in degrees
+     *
+     * @param rotatingAxis the axis that it rotates along, must be normalized
+     * @param degrees      the rotating angle in degrees
      * @return the result
      */
     public static DQuaternion rotationByDegrees(
@@ -66,7 +75,8 @@ public class DQuaternion {
     
     /**
      * Create a new quaternion.
-     * @param axis the axis that it rotates along
+     *
+     * @param axis          the axis that it rotates along, must be normalized
      * @param rotationAngle the rotating angle in radians
      * @return the result
      */
@@ -110,9 +120,8 @@ public class DQuaternion {
     }
     
     /**
-     * @param other
      * @return the hamilton product of "this" and "other".
-     * Equivalent to firstly do "this" rotation and then do "other" rotation
+     * Equivalent to firstly do "other" rotation and then do "this" rotation
      */
     public DQuaternion hamiltonProduct(DQuaternion other) {
         double x1 = this.getX();
@@ -129,6 +138,11 @@ public class DQuaternion {
             w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
             w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
         );
+    }
+    
+    // firstly apply "this" and then "other"
+    public DQuaternion combine(DQuaternion other) {
+        return other.hamiltonProduct(this);
     }
     
     /**
@@ -234,7 +248,10 @@ public class DQuaternion {
     
     @Override
     public String toString() {
-        return String.format("DQuaternion{x=%s, y=%s, z=%s, w=%s}", x, y, z, w);
+        Vec3d rotatingAxis = getRotatingAxis();
+        return String.format("Rotates %.3f degrees along (%.3f %.3f %.3f) Quaternion:(%.3f %.3f %.3f %.3f)",
+            getRotatingAngleDegrees(), rotatingAxis.x, rotatingAxis.y, rotatingAxis.z, x, y, z, w
+        );
     }
     
     /**
@@ -294,15 +311,67 @@ public class DQuaternion {
         );
     }
     
-    public static DQuaternion getRotationBetween(
-        Vec3d from,Vec3d to
+    // x, y, z are the 3 rows of the matrix
+    // http://www.euclideanspace.com/maths/geometry/rotations/conversions/matrixToQuaternion/
+    // only works if the matrix is rotation only
+    public static DQuaternion matrixToQuaternion(
+        Vec3d x, Vec3d y, Vec3d z
     ) {
-        Vec3d crossProduct = from.crossProduct(to);
-        Vec3d rotatingAxis = crossProduct.normalize();
-    
-        double cos = from.dotProduct(to);
-        double angle = Math.acos(cos);
-    
-        return rotationByRadians(rotatingAxis, angle);
+        double m00 = x.getX();
+        double m11 = y.getY();
+        double m22 = z.getZ();
+        
+        double m12 = z.getY();
+        double m21 = y.getZ();
+        
+        double m20 = x.getZ();
+        double m02 = z.getX();
+        
+        double m01 = y.getX();
+        double m10 = x.getY();
+
+//        double m12 = y.getZ();
+//        double m21 = z.getY();
+//
+//        double m20 = z.getX();
+//        double m02 = x.getZ();
+//
+//        double m01 = x.getY();
+//        double m10 = y.getX();
+        
+        double tr = m00 + m11 + m22;
+        
+        double qx, qy, qz, qw;
+        
+        if (tr > 0) {
+            double S = Math.sqrt(tr + 1.0) * 2; // S=4*qw
+            qw = 0.25 * S;
+            qx = (m21 - m12) / S;
+            qy = (m02 - m20) / S;
+            qz = (m10 - m01) / S;
+        }
+        else if ((m00 > m11) && (m00 > m22)) {
+            double S = Math.sqrt(1.0 + m00 - m11 - m22) * 2; // S=4*qx
+            qw = (m21 - m12) / S;
+            qx = 0.25 * S;
+            qy = (m01 + m10) / S;
+            qz = (m02 + m20) / S;
+        }
+        else if (m11 > m22) {
+            double S = Math.sqrt(1.0 + m11 - m00 - m22) * 2; // S=4*qy
+            qw = (m02 - m20) / S;
+            qx = (m01 + m10) / S;
+            qy = 0.25 * S;
+            qz = (m12 + m21) / S;
+        }
+        else {
+            double S = Math.sqrt(1.0 + m22 - m00 - m11) * 2; // S=4*qz
+            qw = (m10 - m01) / S;
+            qx = (m02 + m20) / S;
+            qy = (m12 + m21) / S;
+            qz = 0.25 * S;
+        }
+        
+        return new DQuaternion(qx, qy, qz, qw);
     }
 }

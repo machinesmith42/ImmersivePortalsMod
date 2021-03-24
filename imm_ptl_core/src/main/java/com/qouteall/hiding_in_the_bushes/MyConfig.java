@@ -18,6 +18,8 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 public class MyConfig {
+    // json does not allow comments...
+    public String check_the_wiki_for_more_information = "https://qouteall.fun/immptl/wiki/Config-Options";
     
     public int maxPortalLayer = 5;
     public boolean lagAttackProof = true;
@@ -42,7 +44,8 @@ public class MyConfig {
     public boolean netherPortalOverlay = false;
     public boolean graduallyIncreaseLoadingRange = true;
     public int scaleLimit = 30;
-    public boolean creativePlayerCanUsePortalCommands = true;
+    public boolean easeCreativePermission = true;
+    public boolean easeCommandStickPermission = false;
     public Map<String, String> dimensionRenderRedirect = defaultRedirectMap;
     public Global.NetherPortalMode netherPortalMode = Global.NetherPortalMode.normal;
     public Global.EndPortalMode endPortalMode = Global.EndPortalMode.normal;
@@ -87,7 +90,7 @@ public class MyConfig {
                 }
                 return result;
             }
-            catch (IOException e) {
+            catch (Throwable e) {
                 e.printStackTrace();
                 return new MyConfig();
             }
@@ -146,7 +149,7 @@ public class MyConfig {
         Global.netherPortalOverlay = netherPortalOverlay;
         Global.serverSmoothLoading = graduallyIncreaseLoadingRange;
         Global.scaleLimit = scaleLimit;
-        Global.creativePlayerCanUsePortalCommands = creativePlayerCanUsePortalCommands;
+        Global.easeCreativePermission = easeCreativePermission;
         
         if (FabricLoader.INSTANCE.getEnvironmentType() == EnvType.CLIENT) {
             RenderDimensionRedirect.updateIdMap(dimensionRenderRedirect);

@@ -134,14 +134,18 @@ public abstract class PortalRenderer {
             }
         }
         
-        if (isOutOfDistance(portal)) {
+        double distance = portal.getDistanceToNearestPointInPortal(cameraPos);
+        if (distance > getRenderRange()) {
             return true;
         }
         
         if (CGlobal.earlyFrustumCullingPortal) {
-            Frustum frustum = frustumSupplier.get();
-            if (!frustum.isVisible(portal.getExactAreaBox())) {
-                return true;
+            // frustum culling does not work when portal is very close
+            if (distance > 0.03) {
+                Frustum frustum = frustumSupplier.get();
+                if (!frustum.isVisible(portal.getExactAreaBox())) {
+                    return true;
+                }
             }
         }
         return false;
@@ -227,16 +231,6 @@ public abstract class PortalRenderer {
             worldRenderInfo,
             Runnable::run
         );
-    }
-    
-    private boolean isOutOfDistance(PortalLike portal) {
-        
-        Vec3d cameraPos = CHelper.getCurrentCameraPos();
-        if (portal.getDistanceToNearestPointInPortal(cameraPos) > getRenderRange()) {
-            return true;
-        }
-        
-        return false;
     }
     
     @Nullable

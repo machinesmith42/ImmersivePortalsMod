@@ -19,6 +19,7 @@ import net.minecraft.world.RaycastContext;
 import net.minecraft.world.World;
 
 import javax.annotation.Nullable;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
@@ -322,6 +323,7 @@ public class PortalManipulation {
             portal.fuseView = outerFuseView;
             portal.renderingMergable = outerRenderingMergable;
             portal.hasCrossPortalCollision = hasCrossPortalCollision;
+            portal.portalTag = "imm_ptl:scale_box";
             PortalExtension.get(portal).adjustPositionAfterTeleport = true;
             
             McHelper.spawnServerEntity(portal);
@@ -409,14 +411,39 @@ public class PortalManipulation {
     public static DQuaternion getPortalOrientationQuaternion(
         Vec3d axisW, Vec3d axisH
     ) {
-        DQuaternion r1 = DQuaternion.getRotationBetween(
-            new Vec3d(1, 0, 0), axisW
-        );
+        Vec3d normal = axisW.crossProduct(axisH);
         
-        DQuaternion r2 = DQuaternion.getRotationBetween(
-            r1.rotate(new Vec3d(0, 1, 0)), axisH
+        return DQuaternion.matrixToQuaternion(axisW, axisH, normal);
+    }
+    
+    public static void setPortalOrientationQuaternion(
+        Portal portal, DQuaternion quaternion
+    ) {
+        portal.setOrientation(
+            quaternion.rotate(new Vec3d(1, 0, 0)),
+            quaternion.rotate(new Vec3d(0, 1, 0))
         );
+    }
+    
+    public static void adjustRotationToConnect(Portal portalA, Portal portalB) {
+        DQuaternion a = PortalAPI.getPortalOrientationQuaternion(portalA);
+        DQuaternion b = PortalAPI.getPortalOrientationQuaternion(portalB);
         
-        return r1.hamiltonProduct(r2);
+        DQuaternion delta = b.hamiltonProduct(a.getConjugated());
+        
+        DQuaternion flip = DQuaternion.rotationByDegrees(
+            portalB.axisH, 180
+        );
+        DQuaternion aRot = flip.hamiltonProduct(delta);
+        
+        portalA.setRotationTransformation(aRot.toMcQuaternion());
+        portalB.setRotationTransformation(aRot.getConjugated().toMcQuaternion());
+        
+    }
+    
+    public static boolean isOtherSideBoxInside(Box transformedBoundingBox, PortalLike renderingPortal) {
+        boolean intersects = Arrays.stream(Helper.eightVerticesOf(transformedBoundingBox))
+            .anyMatch(p -> renderingPortal.isInside(p, 0));
+        return intersects;
     }
 }

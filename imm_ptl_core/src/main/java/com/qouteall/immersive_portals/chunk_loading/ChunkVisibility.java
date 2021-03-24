@@ -3,6 +3,7 @@ package com.qouteall.immersive_portals.chunk_loading;
 import com.google.common.collect.Streams;
 import com.qouteall.immersive_portals.Global;
 import com.qouteall.immersive_portals.McHelper;
+import com.qouteall.immersive_portals.my_util.LimitedLogger;
 import com.qouteall.immersive_portals.portal.Portal;
 import com.qouteall.immersive_portals.portal.PortalExtension;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -10,12 +11,15 @@ import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.World;
 
 import java.util.List;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 public class ChunkVisibility {
+    private static final LimitedLogger limitedLogger = new LimitedLogger(10);
+    
     private static final int portalLoadingRange = 48;
     public static final int secondaryPortalLoadingRange = 16;
     
@@ -80,6 +84,11 @@ public class ChunkVisibility {
             if (globalPortal.getDistanceToNearestPointInPortal(pos) < (isDirect ? 256 : 32)) {
                 result.add(globalPortal);
             }
+        }
+        
+        if (result.size() > 30) {
+            limitedLogger.log("too many portal nearby " + world + pos);
+            result = result.subList(0, 30);
         }
         
         return result;
@@ -185,12 +194,18 @@ public class ChunkVisibility {
                 portal -> {
                     Vec3d transformedPlayerPos = portal.transformPoint(player.getPos());
                     
+                    World destinationWorld = portal.getDestinationWorld();
+                    
+                    if (destinationWorld == null) {
+                        return Stream.empty();
+                    }
+                    
                     return Stream.concat(
                         Stream.of(getGeneralDirectPortalLoader(player, portal)),
                         isShrinkLoading() ?
                             Stream.empty() :
                             getNearbyPortals(
-                                ((ServerWorld) portal.getDestinationWorld()),
+                                ((ServerWorld) destinationWorld),
                                 transformedPlayerPos,
                                 p -> p.canBeSpectated(player),
                                 false

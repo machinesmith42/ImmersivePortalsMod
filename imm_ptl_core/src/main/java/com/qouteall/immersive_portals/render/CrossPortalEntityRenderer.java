@@ -13,6 +13,7 @@ import com.qouteall.immersive_portals.optifine_compatibility.ShaderClippingManag
 import com.qouteall.immersive_portals.portal.Mirror;
 import com.qouteall.immersive_portals.portal.Portal;
 import com.qouteall.immersive_portals.portal.PortalLike;
+import com.qouteall.immersive_portals.portal.PortalManipulation;
 import com.qouteall.immersive_portals.render.context_management.PortalRendering;
 import com.qouteall.immersive_portals.render.context_management.RenderStates;
 import com.qouteall.immersive_portals.render.context_management.WorldRenderInfo;
@@ -24,6 +25,7 @@ import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.registry.RegistryKey;
@@ -168,7 +170,9 @@ public class CrossPortalEntityRenderer {
             //use some rough check to work around
             
             if (renderingPortal instanceof Portal) {
-                if (!Portal.isFlippedPortal(((Portal) renderingPortal), collidingPortal)) {
+                if (!Portal.isFlippedPortal(((Portal) renderingPortal), collidingPortal)
+                    && !Portal.isReversePortal(((Portal) renderingPortal), collidingPortal)
+                ) {
                     Vec3d cameraPos = client.gameRenderer.getCamera().getPos();
                     
                     boolean isHidden = cameraPos.subtract(collidingPortal.getDestPos())
@@ -219,16 +223,26 @@ public class CrossPortalEntityRenderer {
         World oldWorld = entity.world;
         
         Vec3d newEyePos = transformingPortal.transformPoint(oldEyePos);
-
-//        if (PortalRendering.isRendering()) {
-//            Portal renderingPortal = PortalRendering.getRenderingPortal();
-//            if (!renderingPortal.isInside(newEyePos, -3)) {
-//                return;
-//            }
-//        }
+        
+        if (PortalRendering.isRendering()) {
+            PortalLike renderingPortal = PortalRendering.getRenderingPortal();
+            
+            Vec3d transformedEntityPos = newEyePos.subtract(0, entity.getStandingEyeHeight(), 0);
+            Box transformedBoundingBox = McHelper.getBoundingBoxWithMovedPosition(entity, transformedEntityPos);
+    
+            boolean intersects = PortalManipulation.isOtherSideBoxInside(transformedBoundingBox, renderingPortal);
+    
+            if (!intersects) {
+                return;
+            }
+        }
         
         if (entity instanceof ClientPlayerEntity) {
             if (!Global.renderYourselfInPortal) {
+                return;
+            }
+            
+            if (!transformingPortal.getDoRenderPlayer()) {
                 return;
             }
             
@@ -329,6 +343,10 @@ public class CrossPortalEntityRenderer {
         if (PortalRendering.isRendering()) {
             PortalLike renderingPortal = PortalRendering.getRenderingPortal();
             Portal collidingPortal = ((IEEntity) entity).getCollidingPortal();
+            
+            if (entity instanceof PlayerEntity && !renderingPortal.getDoRenderPlayer()) {
+                return false;
+            }
             
             // client colliding portal update is not immediate
             if (collidingPortal != null && !(entity instanceof ClientPlayerEntity)) {

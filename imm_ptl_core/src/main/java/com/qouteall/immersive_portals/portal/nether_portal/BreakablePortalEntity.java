@@ -15,6 +15,7 @@ import net.minecraft.entity.EntityType;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtHelper;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.util.Util;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.ChunkPos;
@@ -59,7 +60,13 @@ public abstract class BreakablePortalEntity extends Portal {
         if (compoundTag.contains("netherPortalShape")) {
             blockPortalShape = new BlockPortalShape(compoundTag.getCompound("netherPortalShape"));
         }
+        
         reversePortalId = Helper.getUuid(compoundTag, "reversePortalId");
+        if (reversePortalId == null) {
+            Helper.err("missing reverse portal id " + compoundTag);
+            reversePortalId = Util.NIL_UUID;
+        }
+        
         unbreakable = compoundTag.getBoolean("unbreakable");
         
         if (compoundTag.contains("overlayBlockState")) {
@@ -171,6 +178,10 @@ public abstract class BreakablePortalEntity extends Portal {
     public boolean isPortalPaired() {
         Validate.isTrue(!world.isClient());
         
+        if (isOneWay()) {
+            return true;
+        }
+        
         if (!isOtherSideChunkLoaded()) {
             return true;
         }
@@ -196,6 +207,11 @@ public abstract class BreakablePortalEntity extends Portal {
     
     public void markShouldBreak() {
         shouldBreakPortal = true;
+        
+        if (isOneWay()) {
+            return;
+        }
+        
         BreakablePortalEntity reversePortal = getReversePortal();
         if (reversePortal != null) {
             reversePortal.shouldBreakPortal = true;
@@ -233,4 +249,13 @@ public abstract class BreakablePortalEntity extends Portal {
         );
         return revs;
     }
+    
+    public boolean isOneWay() {
+        return reversePortalId.equals(Util.NIL_UUID);
+    }
+    
+    public void markOneWay() {
+        reversePortalId = Util.NIL_UUID;
+    }
+    
 }

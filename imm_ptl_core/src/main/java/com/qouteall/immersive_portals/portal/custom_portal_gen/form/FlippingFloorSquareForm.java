@@ -128,10 +128,8 @@ public class FlippingFloorSquareForm extends PortalGenForm {
         NetherPortalGeneration.fillInPlaceHolderBlocks(toWorld, toShape);
         
         GeneralBreakablePortal[] portals = createPortals(fromWorld, toWorld, fromShape, toShape);
-        
-        for (GeneralBreakablePortal portal : portals) {
-            cpg.onPortalGenerated(portal);
-        }
+    
+        cpg.onPortalsGenerated(portals);
         
         return true;
     }
@@ -152,8 +150,11 @@ public class FlippingFloorSquareForm extends PortalGenForm {
     public static IntBox findPortalPlacement(ServerWorld toWorld, BlockPos areaSize, BlockPos toPos) {
         return IntStream.range(toPos.getX() - 8, toPos.getX() + 8).boxed()
             .flatMap(x -> IntStream.range(toPos.getZ() - 8, toPos.getZ() + 8).boxed()
-                .flatMap(z -> IntStream.range(5, toWorld.getDimensionHeight() - 5).map(
-                    y -> toWorld.getDimensionHeight() - y
+                .flatMap(z -> IntStream.range(
+                    McHelper.getMinY(toWorld) + 5,
+                    McHelper.getMaxContentYExclusive(toWorld) - 5
+                ).map(
+                    y -> McHelper.getMaxContentYExclusive(toWorld) - y
                 ).mapToObj(y -> new BlockPos(x, y, z)))
             )
             .map(blockPos -> IntBox.getBoxByBasePointAndSize(areaSize, blockPos))
@@ -201,7 +202,7 @@ public class FlippingFloorSquareForm extends PortalGenForm {
         pb.blockPortalShape = toShape;
         pa.reversePortalId = pb.getUuid();
         pb.reversePortalId = pa.getUuid();
-    
+        
         PortalExtension.get(pa).motionAffinity = 0.1;
         PortalExtension.get(pb).motionAffinity = 0.1;
         

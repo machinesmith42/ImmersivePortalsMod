@@ -14,8 +14,12 @@ import com.mojang.datafixers.util.Pair;
 import com.qouteall.immersive_portals.Global;
 import com.qouteall.immersive_portals.Helper;
 import com.qouteall.immersive_portals.McHelper;
+import com.qouteall.immersive_portals.ModMain;
+import com.qouteall.immersive_portals.api.PortalAPI;
 import com.qouteall.immersive_portals.api.example.ExampleGuiPortalRendering;
+import com.qouteall.immersive_portals.my_util.DQuaternion;
 import com.qouteall.immersive_portals.my_util.IntBox;
+import com.qouteall.immersive_portals.my_util.MyTaskList;
 import com.qouteall.immersive_portals.my_util.SignalBiArged;
 import com.qouteall.immersive_portals.network.McRemoteProcedureCall;
 import com.qouteall.immersive_portals.portal.GeometryPortalShape;
@@ -26,7 +30,16 @@ import com.qouteall.immersive_portals.portal.global_portals.GlobalPortalStorage;
 import com.qouteall.immersive_portals.portal.global_portals.VerticalConnectingPortal;
 import com.qouteall.immersive_portals.portal.global_portals.WorldWrappingPortal;
 import com.qouteall.immersive_portals.portal.nether_portal.BreakablePortalEntity;
+import com.qouteall.immersive_portals.portal.nether_portal.NetherPortalMatcher;
 import com.qouteall.immersive_portals.teleportation.ServerTeleportationManager;
+import net.fabricmc.api.EnvType;
+import net.fabricmc.api.Environment;
+import net.minecraft.block.Block;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.Material;
+import net.minecraft.block.piston.PistonBehavior;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.util.math.Vector3f;
 import net.minecraft.command.argument.BlockPosArgumentType;
 import net.minecraft.command.argument.ColumnPosArgumentType;
@@ -52,17 +65,22 @@ import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Quaternion;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.profiler.ProfilerSystem;
+import net.minecraft.util.registry.Registry;
 import net.minecraft.util.registry.RegistryKey;
 import net.minecraft.world.World;
+import org.apache.commons.lang3.Validate;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Random;
 import java.util.UUID;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -103,7 +121,7 @@ public class PortalCommand {
     public static boolean canUsePortalCommand(ServerCommandSource commandSource) {
         Entity entity = commandSource.getEntity();
         if (entity instanceof ServerPlayerEntity) {
-            if (Global.creativePlayerCanUsePortalCommands) {
+            if (Global.easeCreativePermission) {
                 if (((ServerPlayerEntity) entity).isCreative()) {
                     return true;
                 }
@@ -185,13 +203,35 @@ public class PortalCommand {
             })
         );
         
-        builder.then(CommandManager
-            .literal("set_profiler_logging_threshold")
-            .requires(serverCommandSource -> serverCommandSource.hasPermissionLevel(4))
-            .then(CommandManager.argument("ms", IntegerArgumentType.integer())
+        builder.then(CommandManager.literal("profile")
+            .then(CommandManager
+                .literal("set_lag_logging_threshold")
+                .requires(serverCommandSource -> serverCommandSource.hasPermissionLevel(4))
+                .then(CommandManager.argument("ms", IntegerArgumentType.integer())
+                    .executes(context -> {
+                        int ms = IntegerArgumentType.getInteger(context, "ms");
+                        ProfilerSystem.TIMEOUT_NANOSECONDS = Duration.ofMillis(ms).toNanos();
+                        
+                        return 0;
+                    })
+                )
+            ).then(CommandManager
+                .literal("gc")
+                .requires(serverCommandSource -> serverCommandSource.hasPermissionLevel(4))
                 .executes(context -> {
-                    int ms = IntegerArgumentType.getInteger(context, "ms");
-                    ProfilerSystem.TIMEOUT_NANOSECONDS = Duration.ofMillis(ms).toNanos();
+                    System.gc();
+                    
+                    long l = Runtime.getRuntime().maxMemory();
+                    long m = Runtime.getRuntime().totalMemory();
+                    long n = Runtime.getRuntime().freeMemory();
+                    long o = m - n;
+                    
+                    context.getSource().sendFeedback(
+                        new LiteralText(
+                            String.format("Memory: % 2d%% %03d/%03dMB", o * 100L / l, toMiB(o), toMiB(l))
+                        ),
+                        false
+                    );
                     
                     return 0;
                 })
@@ -210,6 +250,52 @@ public class PortalCommand {
                     return 0;
                 })
             )
+        );
+        
+        builder.then(CommandManager
+            .literal("accelerate")
+            .then(CommandManager
+                .argument("v", DoubleArgumentType.doubleArg())
+                .executes(context -> {
+                    double v = DoubleArgumentType.getDouble(context, "v");
+                    McRemoteProcedureCall.tellClientToInvoke(
+                        context.getSource().getPlayer(),
+                        "com.qouteall.immersive_portals.commands.PortalCommand.RemoteCallables.clientAccelerate",
+                        v
+                    );
+                    return 0;
+                })
+            )
+        );
+        
+        
+        builder.then(CommandManager
+                .literal("test")
+                .executes(context -> {
+//                ServerWorld world = context.getSource().getWorld();
+//                Vec3d pos = context.getSource().getPosition();
+//
+//                Portal from = McHelper.findEntitiesRough(
+//                    Portal.class,
+//                    world, pos,
+//                    2,
+//                    p -> Objects.equals(p.portalTag, "from")
+//                ).get(0);
+//
+//                Portal to = McHelper.findEntitiesRough(
+//                    Portal.class,
+//                    world, pos,
+//                    2,
+//                    p -> Objects.equals(p.portalTag, "to")
+//                ).get(0);
+//
+//                PortalManipulation.adjustRotationToConnect(from, to);
+//
+//                from.reloadAndSyncToClient();
+//                to.reloadAndSyncToClient();
+                    
+                    return 0;
+                })
         );
     }
     
@@ -632,6 +718,19 @@ public class PortalCommand {
             ))
         );
         
+        builder.then(CommandManager.literal("eradicate_portal_cluster")
+            .executes(context -> processPortalTargetedCommand(
+                context,
+                portal -> {
+                    PortalManipulation.removeConnectedPortals(
+                        portal,
+                        p -> sendMessage(context, "Removed " + p)
+                    );
+                    portal.remove();
+                    sendMessage(context, "Deleted " + portal);
+                }
+            ))
+        );
         
         builder.then(CommandManager.literal("move_portal")
             .then(CommandManager.argument("distance", DoubleArgumentType.doubleArg())
@@ -792,6 +891,16 @@ public class PortalCommand {
                 )
             )
         );
+        
+        builder.then(CommandManager.literal("reset_portal_orientation")
+            .executes(context -> processPortalTargetedCommand(
+                context, portal -> {
+                    portal.axisW = new Vec3d(1, 0, 0);
+                    portal.axisH = new Vec3d(0, 1, 0);
+                    portal.reloadAndSyncToClient();
+                }
+            ))
+        );
     }
     
     private static void registerPortalTargetedCommandWithRotationArgument(
@@ -822,6 +931,8 @@ public class PortalCommand {
                             func.accept(portal, rot);
                             
                             portal.reloadAndSyncToClient();
+                            
+                            sendEditBreakableWarning(context, portal);
                         }
                     ))
                 )
@@ -848,6 +959,8 @@ public class PortalCommand {
                             func.accept(portal, rot);
                             
                             portal.reloadAndSyncToClient();
+                            
+                            sendEditBreakableWarning(context, portal);
                         }
                     ))
                 )
@@ -872,6 +985,8 @@ public class PortalCommand {
                             func.accept(portal, rot);
                             
                             portal.reloadAndSyncToClient();
+                            
+                            sendEditBreakableWarning(context, portal);
                         }
                     ))
                 )
@@ -896,6 +1011,8 @@ public class PortalCommand {
                             func.accept(portal, rot);
                             
                             portal.reloadAndSyncToClient();
+                            
+                            sendEditBreakableWarning(context, portal);
                         }
                     ))
                 )
@@ -1358,6 +1475,37 @@ public class PortalCommand {
         );
         
         builder.then(CommandManager
+            .literal("create_connected_rooms")
+            .then(CommandManager
+                .literal("roomSize")
+                .then(CommandManager
+                    .argument("roomSize", BlockPosArgumentType.blockPos())
+                    .then(CommandManager
+                        .literal("roomNumber")
+                        .then(CommandManager
+                            .argument("roomNumber", IntegerArgumentType.integer(2, 500))
+                            .executes(context -> {
+                                BlockPos roomSize =
+                                    BlockPosArgumentType.getBlockPos(context, "roomSize");
+                                int roomNumber = IntegerArgumentType.getInteger(context, "roomNumber");
+                                
+                                createConnectedRooms(
+                                    context.getSource().getWorld(),
+                                    new BlockPos(context.getSource().getPosition()),
+                                    roomSize,
+                                    roomNumber,
+                                    text -> context.getSource().sendFeedback(text, false)
+                                );
+                                
+                                return 0;
+                            })
+                        )
+                    )
+                )
+            )
+        );
+        
+        builder.then(CommandManager
             .literal("wiki")
             .executes(context -> {
                 McRemoteProcedureCall.tellClientToInvoke(
@@ -1367,6 +1515,109 @@ public class PortalCommand {
                 return 0;
             })
         );
+    }
+    
+    private static void createConnectedRooms(
+        ServerWorld world, BlockPos startingPos,
+        BlockPos roomSize, int roomNumber,
+        Consumer<Text> feedbackSender
+    ) {
+        BlockPos roomAreaSize = roomSize.add(2, 2, 2);
+        
+        List<IntBox> roomAreaList = new ArrayList<>();
+        
+        Helper.SimpleBox<BlockPos> currentSearchingCenter =
+            new Helper.SimpleBox<>(startingPos);
+        
+        ModMain.serverTaskList.addTask(MyTaskList.chainTask(
+            MyTaskList.repeat(
+                roomNumber,
+                () -> MyTaskList.withDelay(20, MyTaskList.oneShotTask(() -> {
+                    
+                    currentSearchingCenter.obj = currentSearchingCenter.obj.add(getRandomShift(20));
+                    
+                    IntBox airCube = NetherPortalMatcher.findCubeAirAreaAtAnywhere(
+                        roomAreaSize.add(6, 6, 6),
+                        world,
+                        currentSearchingCenter.obj,
+                        128
+                    );
+                    if (airCube == null) {
+                        feedbackSender.accept(new LiteralText("Cannot find space for placing room"));
+                        return;
+                    }
+                    airCube = airCube.getSubBoxInCenter(roomAreaSize);
+                    
+                    fillRoomFrame(world, airCube, getRandomBlock());
+                    roomAreaList.add(airCube);
+                }))
+            ),
+            MyTaskList.oneShotTask(() -> {
+                Stream<IntBox> roomsStream = Stream.concat(
+                    roomAreaList.stream(),
+                    Stream.of(roomAreaList.get(0))
+                );
+                Helper.wrapAdjacentAndMap(
+                    roomsStream, Pair::new
+                ).forEach(pair -> {
+                    
+                    IntBox room1Area = pair.getFirst();
+                    IntBox room2Area = pair.getSecond();
+                    IntBox room1 = room1Area.getAdjusted(1, 1, 1, -1, -1, -1);
+                    IntBox room2 = room2Area.getAdjusted(1, 1, 1, -1, -1, -1);
+                    
+                    Portal portal = Portal.entityType.create(world);
+                    Validate.notNull(portal);
+                    portal.setOriginPos(room1.getCenterVec().add(
+                        roomSize.getX() / 4.0, 0, 0
+                    ));
+                    portal.setDestinationDimension(world.getRegistryKey());
+                    portal.setDestination(room2.getCenterVec().add(
+                        roomSize.getX() / 4.0, 0, 0
+                    ));
+                    portal.setOrientationAndSize(
+                        new Vec3d(1, 0, 0),
+                        new Vec3d(0, 1, 0),
+                        roomSize.getX() / 2.0,
+                        roomSize.getY()
+                    );
+                    portal.portalTag = "imm_ptl:room_connection";
+                    
+                    McHelper.spawnServerEntity(portal);
+                    
+                    Portal reversePortal = PortalAPI.createReversePortal(portal);
+                    McHelper.spawnServerEntity(reversePortal);
+                });
+                
+                feedbackSender.accept(new LiteralText("finished"));
+            })
+        ));
+    }
+    
+    private static BlockState getRandomBlock() {
+        Random random = new Random();
+        
+        for (; ; ) {
+            Block block = Registry.BLOCK.getRandom(random);
+            BlockState state = block.getDefaultState();
+            Material material = state.getMaterial();
+            if (material.blocksMovement() && material.getPistonBehavior() == PistonBehavior.NORMAL
+                && !material.isLiquid()
+            ) {
+                return state;
+            }
+        }
+    }
+    
+    private static void fillRoomFrame(
+        ServerWorld world, IntBox roomArea, BlockState blockState
+    ) {
+        for (Direction direction : Direction.values()) {
+            IntBox surface = roomArea.getSurfaceLayer(direction);
+            surface.fastStream().forEach(blockPos -> {
+                world.setBlockState(blockPos, blockState);
+            });
+        }
     }
     
     
@@ -1450,6 +1701,12 @@ public class PortalCommand {
         
         sendMessage(context, portal.toString());
         
+        sendEditBreakableWarning(context, portal);
+    }
+    
+    private static void sendEditBreakableWarning(
+        CommandContext<ServerCommandSource> context, Portal portal
+    ) {
         if (portal instanceof BreakablePortalEntity) {
             if (!((BreakablePortalEntity) portal).unbreakable) {
                 sendMessage(context, "You are editing a breakable portal." +
@@ -1640,8 +1897,20 @@ public class PortalCommand {
         
         sendMessage(
             context,
-            portal.toString() + "\n"
+            portal.toString()
         );
+        
+        sendMessage(context,
+            String.format("Orientation: %s", PortalAPI.getPortalOrientationQuaternion(portal))
+        );
+        
+        if (portal.getRotation() != null) {
+            sendMessage(context,
+                String.format("Rotating Transformation: %s",
+                    DQuaternion.fromMcQuaternion(portal.getRotation())
+                )
+            );
+        }
     }
     
     public static void sendMessage(CommandContext<ServerCommandSource> context, String message) {
@@ -1732,6 +2001,15 @@ public class PortalCommand {
         }
         
         return numTeleported;
+    }
+    
+    public static BlockPos getRandomShift(int len) {
+        Random rand = new Random();
+        return new BlockPos(
+            (rand.nextDouble() * 2 - 1) * len,
+            (rand.nextDouble() * 2 - 1) * len,
+            (rand.nextDouble() * 2 - 1) * len
+        );
     }
     
     public static interface PortalConsumerThrowsCommandSyntaxException {
@@ -1851,5 +2129,22 @@ public class PortalCommand {
         return new Vec3d(
             Math.sin(radians), 0, Math.cos(radians)
         );
+    }
+    
+    public static class RemoteCallables {
+        @Environment(EnvType.CLIENT)
+        public static void clientAccelerate(double v) {
+            MinecraftClient client = MinecraftClient.getInstance();
+            
+            ClientPlayerEntity player = client.player;
+            
+            player.setVelocity(
+                player.getRotationVec(1).multiply(v / 20)
+            );
+        }
+    }
+    
+    private static long toMiB(long bytes) {
+        return bytes / 1024L / 1024L;
     }
 }

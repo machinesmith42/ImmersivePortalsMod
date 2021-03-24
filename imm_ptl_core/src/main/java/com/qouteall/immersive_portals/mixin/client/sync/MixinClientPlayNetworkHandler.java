@@ -7,7 +7,6 @@ import com.qouteall.immersive_portals.Helper;
 import com.qouteall.immersive_portals.ModMain;
 import com.qouteall.immersive_portals.chunk_loading.DimensionalChunkPos;
 import com.qouteall.immersive_portals.dimension_sync.DimensionTypeSync;
-import com.qouteall.immersive_portals.ducks.IEBuiltChunk;
 import com.qouteall.immersive_portals.ducks.IEClientPlayNetworkHandler;
 import com.qouteall.immersive_portals.ducks.IEPlayerPositionLookS2CPacket;
 import com.qouteall.immersive_portals.ducks.IEWorldRenderer;
@@ -19,7 +18,6 @@ import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.client.render.BuiltChunkStorage;
 import net.minecraft.client.render.WorldRenderer;
-import net.minecraft.client.render.chunk.ChunkBuilder;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.Entity;
 import net.minecraft.network.ClientConnection;
@@ -27,7 +25,6 @@ import net.minecraft.network.packet.s2c.play.EntityPassengersSetS2CPacket;
 import net.minecraft.network.packet.s2c.play.GameJoinS2CPacket;
 import net.minecraft.network.packet.s2c.play.PlayerPositionLookS2CPacket;
 import net.minecraft.network.packet.s2c.play.UnloadChunkS2CPacket;
-import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkSectionPos;
 import net.minecraft.util.profiler.Profiler;
 import net.minecraft.util.registry.DynamicRegistryManager;
@@ -39,6 +36,7 @@ import org.spongepowered.asm.mixin.Mutable;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.Map;
@@ -193,17 +191,7 @@ public abstract class MixinClientPlayNetworkHandler implements IEClientPlayNetwo
                 ClientWorldLoader.getWorldRenderer(world.getRegistryKey());
             BuiltChunkStorage storage = ((IEWorldRenderer) worldRenderer).getBuiltChunkStorage();
             if (storage instanceof MyBuiltChunkStorage) {
-                for (int y = 0; y < 16; ++y) {
-                    ChunkBuilder.BuiltChunk builtChunk = ((MyBuiltChunkStorage) storage).provideBuiltChunk(
-                        new BlockPos(
-                            packet.getX() * 16,
-                            y * 16,
-                            packet.getZ() * 16
-                        )
-                    );
-                    ((IEBuiltChunk) builtChunk).fullyReset();
-                }
-                
+                ((MyBuiltChunkStorage) storage).onChunkUnload(packet.getX(), packet.getZ());
             }
             
             int[] counter = new int[1];
@@ -240,6 +228,22 @@ public abstract class MixinClientPlayNetworkHandler implements IEClientPlayNetwo
             });
             ci.cancel();
         }
+    }
+    
+    // for debug
+    @Redirect(
+        method = "onEntityTrackerUpdate",
+        at = @At(
+            value = "INVOKE",
+            target = "Lnet/minecraft/client/world/ClientWorld;getEntityById(I)Lnet/minecraft/entity/Entity;"
+        )
+    )
+    private Entity redirectGetEntityById(ClientWorld clientWorld, int id) {
+        Entity entity = clientWorld.getEntityById(id);
+        if (entity == null) {
+            Helper.err("missing entity for data tracking " + clientWorld + id);
+        }
+        return entity;
     }
     
     @Override

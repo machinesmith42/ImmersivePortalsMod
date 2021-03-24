@@ -27,6 +27,8 @@ import net.minecraft.nbt.IntTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.command.CommandManager;
+import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ChunkHolder;
 import net.minecraft.server.world.ServerChunkManager;
@@ -47,6 +49,7 @@ import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.registry.RegistryKey;
 import net.minecraft.util.registry.SimpleRegistry;
 import net.minecraft.world.World;
+import net.minecraft.world.WorldAccess;
 import net.minecraft.world.chunk.EmptyChunk;
 import net.minecraft.world.chunk.WorldChunk;
 import org.apache.commons.lang3.Validate;
@@ -489,6 +492,19 @@ public class McHelper {
         );
     }
     
+    public static void validateOnServerThread() {
+        Validate.isTrue(Thread.currentThread() == getServer().getThread(), "must be on server thread");
+    }
+    
+    public static void invokeCommandAs(Entity commandSender, List<String> commandList) {
+        ServerCommandSource commandSource = commandSender.getCommandSource().withLevel(2).withSilent();
+        CommandManager commandManager = getServer().getCommandManager();
+        
+        for (String command : commandList) {
+            commandManager.execute(commandSource, command);
+        }
+    }
+    
     public static interface ChunkAccessor {
         WorldChunk getChunk(int x, int z);
     }
@@ -527,6 +543,7 @@ public class McHelper {
         return result;
     }
     
+    // the range is inclusive on both ends
     public static <T extends Entity> void foreachEntities(
         Class<T> entityClass, ChunkAccessor chunkAccessor,
         int chunkXStart, int chunkXEnd,
@@ -537,8 +554,6 @@ public class McHelper {
         Validate.isTrue(chunkXEnd >= chunkXStart);
         Validate.isTrue(chunkYEnd >= chunkYStart);
         Validate.isTrue(chunkZEnd >= chunkZStart);
-        Validate.isTrue(chunkYStart >= 0);
-        Validate.isTrue(chunkYEnd < 16);
         Validate.isTrue(chunkXEnd - chunkXStart < 1000, "too big");
         Validate.isTrue(chunkZEnd - chunkZStart < 1000, "too big");
         
@@ -578,7 +593,7 @@ public class McHelper {
             getChunkAccessor(world),
             chunkPos.x - radiusChunks,
             chunkPos.x + radiusChunks,
-            0, 15,
+            McHelper.getMinChunkY(world), McHelper.getMaxChunkYExclusive(world) - 1,
             chunkPos.z - radiusChunks,
             chunkPos.z + radiusChunks,
             predicate
@@ -621,11 +636,14 @@ public class McHelper {
         int yMax = (int) Math.ceil(box.maxY + maxEntityRadius);
         int zMax = (int) Math.ceil(box.maxZ + maxEntityRadius);
         
+        int minChunkY = McHelper.getMinChunkY(world);
+        int maxChunkYExclusive = McHelper.getMaxChunkYExclusive(world);
+        
         foreachEntities(
             entityClass, getChunkAccessor(world),
             xMin >> 4, xMax >> 4,
-            MathHelper.clamp(yMin >> 4, 0, 15),
-            MathHelper.clamp(yMax >> 4, 0, 15),
+            MathHelper.clamp(yMin >> 4, minChunkY, maxChunkYExclusive - 1),
+            MathHelper.clamp(yMax >> 4, minChunkY, maxChunkYExclusive - 1),
             zMin >> 4, zMax >> 4,
             consumer
         );
@@ -859,4 +877,31 @@ public class McHelper {
         }
     }
     
+    public static int getMinY(WorldAccess world) {
+        return 0;
+    }
+    
+    public static int getMaxYExclusive(WorldAccess world) {
+        return 256;
+    }
+    
+    public static int getMaxContentYExclusive(WorldAccess world) {
+        return world.getDimensionHeight();
+    }
+    
+    public static int getMinChunkY(WorldAccess world) {
+        return 0;
+    }
+    
+    public static int getMaxChunkYExclusive(WorldAccess world) {
+        return 16;
+    }
+    
+    public static Box getBoundingBoxWithMovedPosition(
+        Entity entity, Vec3d newPos
+    ) {
+        return entity.getBoundingBox().offset(
+            newPos.subtract(entity.getPos())
+        );
+    }
 }

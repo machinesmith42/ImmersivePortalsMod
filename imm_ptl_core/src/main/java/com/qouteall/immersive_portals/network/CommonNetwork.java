@@ -16,12 +16,11 @@ public class CommonNetwork {
     @Nullable
     public static RegistryKey<World> forceRedirect = null;
     
-    public static boolean getIsProcessingRedirectedMessage() {
-        return CommonNetworkClient.isProcessingRedirectedMessage;
-    }
-    
     public static void withForceRedirect(RegistryKey<World> dimension, Runnable func) {
-        Validate.isTrue(McHelper.getServer().getThread() == Thread.currentThread());
+        Validate.isTrue(
+            McHelper.getServer().getThread() == Thread.currentThread(),
+            "Maybe a mod is trying to add entity in a non-server thread. This is probably not IP's issue"
+        );
         
         RegistryKey<World> oldForceRedirect = forceRedirect;
         forceRedirect = dimension;

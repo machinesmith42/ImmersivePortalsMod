@@ -1,7 +1,6 @@
 package com.qouteall.imm_ptl_peripheral.altius_world;
 
-import com.qouteall.imm_ptl_peripheral.alternate_dimension.AlternateDimensions;
-import com.qouteall.immersive_portals.Global;
+import com.qouteall.immersive_portals.api.IPDimensionAPI;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
@@ -41,17 +40,10 @@ public class SelectDimensionScreen extends Screen {
         DynamicRegistryManager.Impl dynamicRegistryManager
     ) {
         
-        final GeneratorOptions generatorOptions = generatorOptionsSupplier.get();
+        GeneratorOptions generatorOptions = generatorOptionsSupplier.get();
         SimpleRegistry<DimensionOptions> dimensionMap = generatorOptions.getDimensions();
         
-        // Alternate dimensions are added in a special way
-        if (Global.enableAlternateDimensions) {
-            AlternateDimensions.addAlternateDimensions(
-                dimensionMap,
-                dynamicRegistryManager,
-                generatorOptions.getSeed()
-            );
-        }
+        IPDimensionAPI.onServerWorldInit.emit(generatorOptions, dynamicRegistryManager);
         
         ArrayList<RegistryKey<World>> dimList = new ArrayList<>();
         

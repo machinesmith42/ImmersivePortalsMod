@@ -66,7 +66,6 @@ import net.minecraft.world.gen.GeneratorOptions;
 import net.minecraft.world.gen.chunk.ChunkGenerator;
 
 import java.lang.ref.Reference;
-import java.lang.reflect.Method;
 import java.net.URLClassLoader;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -451,31 +450,27 @@ public class ClientDebugCommand {
             })
         );
         builder.then(CommandManager
-            .literal("is_altius")
+            .literal("test")
             .executes(context -> {
-                
-                Object obj = Helper.noError(
-                    () -> {
-                        Class<?> cls = Class.forName("com.qouteall.imm_ptl_peripheral.altius_world.AltiusInfo");
-                        Method method = cls.getDeclaredMethod("isAltius");
-                        return method.invoke(null);
-                    }
-                );
-                
-                boolean altius = ((Boolean) obj);
-                
-                if (altius) {
-                    context.getSource().sendFeedback(
-                        new LiteralText("yes"),
-                        false
-                    );
-                }
-                else {
-                    context.getSource().sendFeedback(
-                        new LiteralText("no"),
-                        false
-                    );
-                }
+//                IPDimensionAPI.onServerWorldInit.connect((generatorOptions, registryManager) -> {
+//                    SimpleRegistry<DimensionOptions> registry = generatorOptions.getDimensions();
+//                    long seed = generatorOptions.getSeed();
+//
+//                    DimensionType dimensionType = registryManager.get(Registry.DIMENSION_TYPE_KEY)
+//                        .get(new Identifier("namespace:dimension_type_id"));
+//
+//                    Validate.notNull(dimensionType);
+//
+//                    MutableRegistry<Biome> biomeRegistry = registryManager.get(Registry.BIOME_KEY);
+//                    BiomeSource biomeSource = new CustomBiomeSource(seed, biomeRegistry);
+//
+//                    Identifier dimensionId = new Identifier("namespace:dimension_id");
+//                    IPDimensionAPI.addDimension(
+//                        seed, registry, dimensionId, () -> dimensionType,
+//                        new CustomChunkGenerator(seed,biomeSource)
+//                    );
+//                    IPDimensionAPI.markDimensionNonPersistent(dimensionId);
+//                });
                 
                 return 0;
             })
